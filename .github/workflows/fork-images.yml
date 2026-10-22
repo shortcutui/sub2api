@@ -80,6 +80,22 @@ jobs:
           SUB2API_IMAGE: ${{ steps.metadata.outputs.image_ref }}
           EXPECTED_VERSION: ${{ steps.metadata.outputs.version }}
         run: bash deploy/tests/fork-image-smoke.sh
+      - name: 导出首次部署用的镜像包
+        env:
+          IMAGE_REF: ${{ steps.metadata.outputs.image_ref }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/fork-image"
+          docker save "$IMAGE_REF" | gzip -1 > "$RUNNER_TEMP/fork-image/sub2api-image.tar.gz"
+          cd "$RUNNER_TEMP/fork-image"
+          sha256sum sub2api-image.tar.gz > SHA256SUMS
+          printf '%s\n' "$IMAGE_REF" > IMAGE_REF
+      - uses: actions/upload-artifact@v7
+        with:
+          name: sub2api-image-${{ github.sha }}
+          path: ${{ runner.temp }}/fork-image/
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
       - name: 发布已验证镜像
         env:
           IMAGE_REF: ${{ steps.metadata.outputs.image_ref }}

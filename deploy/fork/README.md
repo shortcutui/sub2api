@@ -13,6 +13,8 @@
 
 工作流摘要提供镜像地址和固定摘要。默认分支包含该工作流后，也可在 Actions 页面手动选择 `dev` 或 `production` 构建。工作流使用内置 `GITHUB_TOKEN` 发布 GHCR，不需要服务器 SSH 密钥，也不会自动部署。首次创建的 GHCR 包可能是私有的；服务器拉取时需要包读取权限，或由仓库所有者在包设置中改为公开。
 
+工作流还保留一天的 `sub2api-image-<完整提交号>` 镜像包，供首次部署使用。在 Actions 页面下载并解压 artifact 后，执行 `sha256sum -c SHA256SUMS` 校验，再将 `sub2api-image.tar.gz` 传到新机器，使用 `docker load -i sub2api-image.tar.gz` 导入。此时可以跳过应用镜像的 `pull`，直接启动 Compose；PostgreSQL 和 Redis 仍从 Docker Hub 拉取。后续持续更新建议配置 GHCR 读取权限或将镜像包设为公开。
+
 镜像以 `container` 类型构建，管理后台显示镜像版本提示并禁用应用内二进制更新和回退。源码或正式二进制 Release 的更新源为 `shortcutui/sub2api`。
 
 ## 全新测试环境
