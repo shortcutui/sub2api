@@ -21,6 +21,8 @@
 
 </div>
 
+> `shortcutui/sub2api` 的分支约定、GitHub Actions 镜像和全新测试环境配置见 [fork 开发与部署说明](deploy/fork/README.md)。
+
 ## 社区交流群
 
 欢迎正在部署、使用或维护 Sub2API 的朋友加入 QQ 群「中转技术交流」（群号 **1004036018**），交流部署实践、协议兼容、出口代理和功能改进。也欢迎参与问题复现、测试、文档补充和 Pull Request，一起维护这个独立分支。

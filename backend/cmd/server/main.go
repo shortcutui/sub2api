@@ -36,7 +36,7 @@ var (
 	Version   = ""
 	Commit    = "unknown"
 	Date      = "unknown"
-	BuildType = "source" // "source" for manual builds, "release" for CI builds (set by ldflags)
+	BuildType = "source" // source、release 或 container，由 ldflags 设置
 )
 
 func init() {

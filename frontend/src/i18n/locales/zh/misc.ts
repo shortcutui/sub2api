@@ -30,6 +30,8 @@ export default {
     viewChangelog: '查看更新日志',
     refresh: '刷新',
     sourceMode: '源码构建',
+    containerMode: 'Docker 镜像版本',
+    containerModeHint: '请使用自己的镜像更新或回退，并重新创建应用容器。此页面不替换容器内的程序。',
     sourceModeHint: '源码构建请使用 git pull 更新',
     updateNow: '立即更新',
     updating: '正在更新...',

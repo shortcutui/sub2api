@@ -32,6 +32,7 @@ type updateServiceGitHubClientStub struct {
 	recentReleases []*GitHubRelease
 	recentErr      error
 	latestRepo     string
+	recentRepo     string
 }
 
 func (s *updateServiceGitHubClientStub) FetchLatestRelease(_ context.Context, repo string) (*GitHubRelease, error) {
@@ -39,7 +40,8 @@ func (s *updateServiceGitHubClientStub) FetchLatestRelease(_ context.Context, re
 	return s.release, nil
 }
 
-func (s *updateServiceGitHubClientStub) FetchRecentReleases(context.Context, string, int) ([]*GitHubRelease, error) {
+func (s *updateServiceGitHubClientStub) FetchRecentReleases(_ context.Context, repo string, _ int) ([]*GitHubRelease, error) {
+	s.recentRepo = repo
 	return s.recentReleases, s.recentErr
 }
 
@@ -70,7 +72,35 @@ func TestUpdateServicePerformUpdateNoUpdateReturnsSentinel(t *testing.T) {
 	require.Error(t, err)
 	require.True(t, errors.Is(err, ErrNoUpdateAvailable))
 	require.ErrorIs(t, err, ErrNoUpdateAvailable)
-	require.Equal(t, "ranxi2001/sub2api", githubClient.latestRepo)
+	require.Equal(t, "shortcutui/sub2api", githubClient.latestRepo)
+}
+
+func TestUpdateServiceContainerBuildUsesImageLifecycle(t *testing.T) {
+	// nil 客户端确保镜像版本查询、更新和回退都不会访问 Release 或缓存。
+	svc := NewUpdateService(nil, nil, "2.15.0-dev.abc123", "container")
+	for _, force := range []bool{false, true} {
+		info, err := svc.CheckUpdate(context.Background(), force)
+		require.NoError(t, err)
+		require.Equal(t, "2.15.0-dev.abc123", info.CurrentVersion)
+		require.Equal(t, info.CurrentVersion, info.LatestVersion)
+		require.Equal(t, "container", info.BuildType)
+		require.False(t, info.HasUpdate)
+		require.Nil(t, info.ReleaseInfo)
+	}
+	versions, err := svc.ListRollbackVersions(context.Background())
+	require.NoError(t, err)
+	require.Empty(t, versions)
+	require.ErrorIs(t, svc.PerformUpdate(context.Background()), ErrContainerManagedUpdate)
+	require.ErrorIs(t, svc.RollbackToVersion(context.Background(), "2.12.1"), ErrContainerManagedUpdate)
+	require.ErrorIs(t, svc.Rollback(), ErrContainerManagedUpdate)
+}
+
+func TestUpdateServiceRollbackUsesOwnRepository(t *testing.T) {
+	client := &updateServiceGitHubClientStub{}
+	svc := NewUpdateService(&updateServiceCacheStub{}, client, "2.15.0", "release")
+	_, err := svc.ListRollbackVersions(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "shortcutui/sub2api", client.recentRepo)
 }
 
 func newRollbackTestService(current string, releases []*GitHubRelease) *UpdateService {

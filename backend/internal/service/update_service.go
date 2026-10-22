@@ -27,6 +27,7 @@ var (
 	ErrNoUpdateAvailable         = infraerrors.Conflict("ALREADY_UP_TO_DATE", "no update available; current version is latest")
 	ErrRollbackVersionNotAllowed = infraerrors.BadRequest("ROLLBACK_VERSION_NOT_ALLOWED", "version is not in the allowed rollback list")
 	ErrSystemRestartRequired     = infraerrors.Conflict("SYSTEM_RESTART_REQUIRED", "an update or rollback is already installed; restart the service before another update or rollback")
+	ErrContainerManagedUpdate    = infraerrors.Conflict("CONTAINER_MANAGED_UPDATE", "此版本通过 Docker 镜像管理，请更换镜像后重新创建容器以更新或回退")
 )
 
 const (
@@ -35,7 +36,7 @@ const (
 	// Releases are maintained on the owner-controlled production fork. Keep the
 	// updater independent from the upstream repository so production installs
 	// see our release stream and can update to our fork's assets.
-	githubRepo = "ranxi2001/sub2api"
+	githubRepo = "shortcutui/sub2api"
 
 	// Security: allowed download domains for updates
 	allowedDownloadHost = "github.com"
@@ -69,7 +70,7 @@ type UpdateService struct {
 	cache           UpdateCache
 	githubClient    GitHubReleaseClient
 	currentVersion  string
-	buildType       string // "source" for manual builds, "release" for CI builds
+	buildType       string // source、release 或通过镜像管理版本的 container
 	installMu       sync.Mutex
 	restartRequired bool
 }
@@ -92,7 +93,7 @@ type UpdateInfo struct {
 	ReleaseInfo    *ReleaseInfo `json:"release_info,omitempty"`
 	Cached         bool         `json:"cached"`
 	Warning        string       `json:"warning,omitempty"`
-	BuildType      string       `json:"build_type"` // "source" or "release"
+	BuildType      string       `json:"build_type"` // source、release 或 container
 }
 
 // ReleaseInfo contains GitHub release details
@@ -138,6 +139,15 @@ type GitHubAsset struct {
 
 // CheckUpdate checks for available updates
 func (s *UpdateService) CheckUpdate(ctx context.Context, force bool) (*UpdateInfo, error) {
+	// 镜像版本由外部发布流程管理，跳过旧缓存和二进制 Release 检查。
+	if s.buildType == "container" {
+		return &UpdateInfo{
+			CurrentVersion: s.currentVersion,
+			LatestVersion:  s.currentVersion,
+			BuildType:      s.buildType,
+		}, nil
+	}
+
 	// Try cache first
 	if !force {
 		if cached, err := s.getFromCache(ctx); err == nil && cached != nil {
@@ -170,6 +180,9 @@ func (s *UpdateService) CheckUpdate(ctx context.Context, force bool) (*UpdateInf
 // PerformUpdate downloads and applies the update
 // Uses atomic file replacement pattern for safe in-place updates
 func (s *UpdateService) PerformUpdate(ctx context.Context) error {
+	if s.buildType == "container" {
+		return ErrContainerManagedUpdate
+	}
 	if err := s.checkRestartRequired(); err != nil {
 		return err
 	}
@@ -311,6 +324,9 @@ func (s *UpdateService) applyReleaseAssets(ctx context.Context, releaseAssets []
 
 // Rollback restores the previous version
 func (s *UpdateService) Rollback() error {
+	if s.buildType == "container" {
+		return ErrContainerManagedUpdate
+	}
 	s.installMu.Lock()
 	defer s.installMu.Unlock()
 	if s.restartRequired {
@@ -344,6 +360,9 @@ func (s *UpdateService) Rollback() error {
 // strictly older than the current version (the current version itself is excluded),
 // newest first. Draft and prerelease entries are skipped.
 func (s *UpdateService) ListRollbackVersions(ctx context.Context) ([]RollbackVersion, error) {
+	if s.buildType == "container" {
+		return []RollbackVersion{}, nil
+	}
 	releases, err := s.fetchRollbackCandidates(ctx)
 	if err != nil {
 		return nil, err
@@ -364,6 +383,9 @@ func (s *UpdateService) ListRollbackVersions(ctx context.Context) ([]RollbackVer
 // The target must be one of the versions returned by ListRollbackVersions;
 // anything else (including the current version) is rejected.
 func (s *UpdateService) RollbackToVersion(ctx context.Context, version string) error {
+	if s.buildType == "container" {
+		return ErrContainerManagedUpdate
+	}
 	if err := s.checkRestartRequired(); err != nil {
 		return err
 	}

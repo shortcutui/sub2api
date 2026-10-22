@@ -30,6 +30,8 @@ export default {
     viewChangelog: 'View Changelog',
     refresh: 'Refresh',
     sourceMode: 'Source Build',
+    containerMode: 'Docker Image Build',
+    containerModeHint: 'Update or roll back using your own image and recreate the application container. This page does not replace the program inside the container.',
     sourceModeHint: 'Source build, use git pull to update',
     updateNow: 'Update Now',
     updating: 'Updating...',
