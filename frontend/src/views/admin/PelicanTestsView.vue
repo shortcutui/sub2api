@@ -134,6 +134,7 @@
                 </div>
               </div>
               <div class="plan-actions">
+                <PelicanAccountPoolButton :group-id="plan.group_id" :group-name="plan.group_name" :disabled="plan.group_status === 'deleted'" />
                 <button :disabled="!!pending[plan.id] || isRunning(plan) || !plan.model_id" :data-testid="`pelican-plan-run-${plan.id}`" @click="runNow(plan)">
                   <Icon name="play" size="xs" />{{ t('pelicanTests.plans.runNow') }}
                 </button>
@@ -337,6 +338,7 @@ import { RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import SmartOpsNav from '@/components/admin/operations/SmartOpsNav.vue'
+import PelicanAccountPoolButton from '@/features/pelican-account-pool/PelicanAccountPoolButton.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'

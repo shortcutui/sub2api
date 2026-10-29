@@ -933,6 +933,7 @@ func registerControlledExperimentRoutes(admin *gin.RouterGroup, h *handler.Handl
 }
 
 func registerPelicanShowcaseRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	registerPelicanAccountPoolRoutes(admin, h)
 	admin.GET("/pelican-showcase/settings", h.PelicanShowcase.GetSettings)
 	admin.PUT("/pelican-showcase/settings", h.PelicanShowcase.UpdateSettings)
 	admin.DELETE("/pelican-showcase/items/:id", h.PelicanShowcase.DeleteItem)

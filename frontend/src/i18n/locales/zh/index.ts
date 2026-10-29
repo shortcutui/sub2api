@@ -8,6 +8,7 @@ import controlledExperiments from './controlledExperiments'
 import accountOps from './accountOps'
 import tokenGuard from './tokenGuard'
 import pelicanTests from './pelicanTests'
+import { messages as pelicanAccountPoolMessages } from '@/features/pelican-account-pool/messages'
 import modelTrace from './modelTrace'
 import tokenGuardV2 from './tokenGuardV2'
 import landing from './landing'
@@ -36,6 +37,7 @@ export default {
   accountOps,
   tokenGuard,
   pelicanTests,
+  pelicanAccountPool: pelicanAccountPoolMessages.zh,
   modelTrace,
   tokenGuardV2,
   requestTiming,

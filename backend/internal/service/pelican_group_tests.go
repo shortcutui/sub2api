@@ -103,6 +103,7 @@ type PelicanGroupTestPlanInput struct {
 }
 
 type PelicanGroupTestRepository interface {
+	PelicanAccountPoolRepository
 	ListPlans(ctx context.Context) ([]*PelicanGroupTestPlan, error)
 	// GetPlan returns nil when the plan does not exist.
 	GetPlan(ctx context.Context, id int64) (*PelicanGroupTestPlan, error)
@@ -393,6 +394,11 @@ func (s *PelicanGroupTestService) runSamples(ctx context.Context, plan *PelicanG
 		return []*PelicanGroupTestResult{s.newResult(plan, now, now, fmt.Sprintf("group_unavailable: %v", err))}
 	}
 	count := 1
+	ctx, err = s.withAccountPool(ctx, group.ID)
+	if err != nil {
+		now := s.now()
+		return []*PelicanGroupTestResult{s.newResult(plan, now, now, fmt.Sprintf("account_pool_unavailable: %v", err))}
+	}
 	if plan.PelicanConfig != nil && plan.PelicanConfig.ParallelCount > 1 {
 		count = plan.PelicanConfig.ParallelCount
 	}
@@ -437,7 +443,7 @@ func (s *PelicanGroupTestService) runSample(ctx context.Context, plan *PelicanGr
 	attempts := []PelicanGroupTestAttempt{}
 	var lastSample *ScheduledTestResult
 	for {
-		route, err := s.router.route(ctx, group, plan.ModelID, excluded)
+		route, err := s.routePelicanAccount(ctx, group, plan.ModelID, excluded)
 		if err != nil {
 			if len(attempts) == 0 {
 				return s.newResult(plan, started, s.now(), fmt.Sprintf("no_available_account: %v", err))
@@ -585,6 +591,9 @@ type pelicanGroupTestRoutingKey struct{}
 // An empty mapping retains the existing unrestricted behavior. Check this before
 // ranking/acquiring slots so ineligible accounts cannot crowd out eligible candidates.
 func pelicanGroupTestModelAllowed(ctx context.Context, account *Account, model string) bool {
+	if !pelicanShowcaseAccountAllowed(ctx, account) {
+		return false
+	}
 	if enabled, _ := ctx.Value(pelicanGroupTestRoutingKey{}).(bool); !enabled {
 		return true
 	}
