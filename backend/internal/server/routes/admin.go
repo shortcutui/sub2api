@@ -37,6 +37,8 @@ func RegisterAdminRoutes(
 	admin.Use(gin.HandlerFunc(auditLog))
 	admin.Use(h.Admin.Account.AuthorizeObserver)
 	admin.Use(middleware.AdminComplianceGuard(settingService))
+	// 受限密钥的账户操作走独立资源校验，普通管理员保持原处理器。
+	admin.Use(h.Admin.Account.ScopedAdminKeyAccounts)
 	{
 		// Optional region-to-Pod routing, configured inside Gateway settings.
 		admin.GET("/serverless", h.Admin.Setting.GetServerless)
@@ -86,7 +88,7 @@ func RegisterAdminRoutes(
 		registerPromoCodeRoutes(admin, h)
 
 		// 系统设置
-		registerSettingsRoutes(admin, h)
+		registerSettingsRoutes(admin, h, stepUpAuth)
 		if h.Admin.RequestCapture != nil {
 			captures := admin.Group("/request-captures")
 			captures.Use(h.Admin.RequestCapture.Gate)
@@ -210,8 +212,19 @@ func registerContentModerationRoutes(admin *gin.RouterGroup, h *handler.Handlers
 		risk.PUT("/config", h.Admin.ContentModeration.UpdateConfig)
 		risk.POST("/api-keys/test", h.Admin.ContentModeration.TestAPIKeys)
 		risk.GET("/status", h.Admin.ContentModeration.GetStatus)
+		risk.GET("/safety-prompt/config", h.Admin.ContentModeration.GetSafetyPromptConfig)
+		risk.PUT("/safety-prompt/config", h.Admin.ContentModeration.UpdateSafetyPromptConfig)
+		risk.GET("/safety-prompt/events", h.Admin.ContentModeration.ListSafetyPromptEvents)
 		risk.GET("/logs", h.Admin.ContentModeration.ListLogs)
+		risk.GET("/evidence/config", h.Admin.ContentModeration.GetCyberEvidenceConfig)
+		risk.PUT("/evidence/config", h.Admin.ContentModeration.UpdateCyberEvidenceConfig)
+		risk.GET("/logs/:id/evidence", h.Admin.ContentModeration.GetCyberEvidence)
+		risk.GET("/logs/:id/evidence/export", h.Admin.ContentModeration.ExportCyberEvidence)
+		risk.DELETE("/logs/:id/evidence", h.Admin.ContentModeration.DeleteCyberEvidence)
 		risk.POST("/users/:user_id/unban", h.Admin.ContentModeration.UnbanUser)
+		risk.GET("/users", h.Admin.ContentModeration.ListUsers)
+		risk.GET("/users/:user_id", h.Admin.ContentModeration.GetUser)
+		risk.POST("/users/:user_id/actions", h.Admin.ContentModeration.ManageUser)
 		risk.DELETE("/hashes", h.Admin.ContentModeration.DeleteFlaggedHash)
 		risk.DELETE("/hashes/all", h.Admin.ContentModeration.ClearFlaggedHashes)
 	}
@@ -362,6 +375,7 @@ func registerUserManagementRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 
 func registerGroupRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	groups := admin.Group("/groups")
+	groups.Use(h.Admin.Group.ScopedAdminKeyGroupModels)
 	{
 		groups.GET("", h.Admin.Group.List)
 		groups.GET("/all", h.Admin.Group.GetAll)
@@ -672,8 +686,9 @@ func registerPromoCodeRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	}
 }
 
-func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAuth middleware.StepUpAuthMiddleware) {
 	adminSettings := admin.Group("/settings")
+	registerScopedAdminKeyRoutes(adminSettings, h, stepUpAuth)
 	{
 		registerIPAuditRoutes(adminSettings, h.Admin.Setting)
 		adminSettings.GET("/ip-risk", h.Admin.Setting.GetIPRisk)
@@ -698,8 +713,8 @@ func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		adminSettings.POST("/email-templates/:event/:locale/restore-official", h.Admin.Setting.RestoreOfficialEmailTemplate)
 		// Admin API Key 管理
 		adminSettings.GET("/admin-api-key", h.Admin.Setting.GetAdminAPIKey)
-		adminSettings.POST("/admin-api-key/regenerate", h.Admin.Setting.RegenerateAdminAPIKey)
-		adminSettings.DELETE("/admin-api-key", h.Admin.Setting.DeleteAdminAPIKey)
+		adminSettings.POST("/admin-api-key/regenerate", gin.HandlerFunc(stepUpAuth), h.Admin.Setting.RegenerateAdminAPIKey)
+		adminSettings.DELETE("/admin-api-key", gin.HandlerFunc(stepUpAuth), h.Admin.Setting.DeleteAdminAPIKey)
 		// 529过载冷却配置
 		adminSettings.GET("/overload-cooldown", h.Admin.Setting.GetOverloadCooldownSettings)
 		adminSettings.PUT("/overload-cooldown", h.Admin.Setting.UpdateOverloadCooldownSettings)
@@ -830,6 +845,9 @@ func registerUsageRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	usage := admin.Group("/usage")
 	{
 		usage.GET("", h.Admin.Usage.List)
+		usage.GET("/traffic", h.Admin.Usage.Traffic)
+		usage.GET("/traffic/keys", h.Admin.Usage.TrafficKeys)
+		usage.GET("/traffic/health", h.Admin.Usage.TrafficHealth)
 		usage.GET("/stats", h.Admin.Usage.Stats)
 		usage.GET("/connections", h.Admin.Usage.Connections)
 		usage.POST("/connections/edge", h.Admin.Usage.ImportEdgeConnections)
@@ -898,10 +916,18 @@ func registerScheduledTestRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	admin.DELETE("/account-ops/token-guard-v2/accounts/:id", h.Admin.AccountTokenGuardV2.Delete)
 	admin.POST("/account-ops/token-guard-v2/accounts/:id/probe", h.Admin.AccountTokenGuardV2.Probe)
 	admin.POST("/account-ops/token-guard-v2/accounts/:id/relogin", h.Admin.AccountTokenGuardV2.Relogin)
+	admin.POST("/account-ops/token-guard-v2/accounts/:id/resume-relogin-budget", h.Admin.AccountTokenGuardV2.ResumeReloginBudget)
 	admin.GET("/account-quality-results", h.Admin.ScheduledTest.ListQualityHistory)
 	admin.GET("/account-quality-plans", h.Admin.ScheduledTest.ListQualityPlans)
 	admin.POST("/account-quality-plans/:id/run", h.Admin.ScheduledTest.TriggerQuality)
+	admin.GET("/account-quality-plans/:id/ownership", h.Admin.ScheduledTest.QualityOwnershipPreview)
+	admin.POST("/account-quality-plans/:id/ownership/reconcile", h.Admin.ScheduledTest.QualityOwnershipReconcile)
+	admin.POST("/account-quality-plans/:id/ownership/restore", h.Admin.ScheduledTest.QualityOwnershipRestore)
+	admin.POST("/account-quality-plans/:id/ownership/remove-model", h.Admin.ScheduledTest.QualityOwnershipRemoveModel)
 	admin.GET("/account-quality-templates", h.Admin.ScheduledTest.ListQualityTemplates)
+	admin.GET("/account-quality-presets", h.Admin.ScheduledTest.ListQualityPresets)
+	admin.POST("/account-quality-presets", h.Admin.ScheduledTest.CreateQualityPreset)
+	admin.PUT("/account-quality-presets/:id", h.Admin.ScheduledTest.UpdateQualityPreset)
 	admin.POST("/account-quality-templates", h.Admin.ScheduledTest.CreateQualityTemplate)
 	admin.PUT("/account-quality-templates/:id", h.Admin.ScheduledTest.UpdateQualityTemplate)
 	admin.DELETE("/account-quality-templates/:id", h.Admin.ScheduledTest.DeleteQualityTemplate)
@@ -986,9 +1012,14 @@ func registerPluginRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAut
 }
 
 func registerChannelRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	admin.GET("/profit-operations/snapshot", h.Admin.Channel.ProfitOperations)
+	admin.GET("/upstream-operations/snapshot", h.Admin.Channel.UpstreamOperations)
 	channels := admin.Group("/channels")
 	{
 		channels.GET("", h.Admin.Channel.List)
+		channels.GET("/:id/operations", h.Admin.Channel.OperationsCatalog)
+		channels.POST("/:id/operations", h.Admin.Channel.MutateOperations)
+		channels.GET("/operations/snapshot", h.Admin.Channel.OperationsSnapshot)
 		channels.GET("/model-pricing", h.Admin.Channel.GetModelDefaultPricing)
 		channels.GET("/pricing/sync-models", h.Admin.Channel.SyncPricingModels)
 		channels.GET("/:id", h.Admin.Channel.GetByID)

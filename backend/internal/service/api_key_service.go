@@ -293,6 +293,7 @@ type RateLimitCacheInvalidator interface {
 }
 
 type APIKeyService struct {
+	balanceRejectionNotifier  BalanceRejectionNotifier
 	localAuth                 *RegionalAuthReader
 	regionalAuthRuntime       *regionalSchedulerRuntime
 	apiKeyRepo                APIKeyRepository
@@ -320,6 +321,7 @@ type APIKeyService struct {
 	authInvalidationCancel    context.CancelFunc
 	authInvalidationWG        sync.WaitGroup
 	authInvalidationConnected atomic.Bool
+	authCacheL1Epoch          atomic.Uint64
 	authInvalidationFailures  atomic.Uint64
 	lastUsedTouchL1           sync.Map // keyID -> nextAllowedAt(time.Time)
 	lastUsedTouchSF           singleflight.Group
@@ -667,11 +669,7 @@ func paginateAPIKeys(keys []APIKey, params pagination.PaginationParams) []APIKey
 		return []APIKey{}
 	}
 	limit := params.Limit()
-	page := params.Page
-	if page < 1 {
-		page = 1
-	}
-	offset := (page - 1) * limit
+	offset := params.Offset()
 	if offset >= len(keys) {
 		return []APIKey{}
 	}

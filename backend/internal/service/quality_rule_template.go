@@ -66,6 +66,9 @@ type QualityTemplateUpdate struct {
 
 // QualityRuleTemplateRepository stores group rules and the accounts each one has covered.
 type QualityRuleTemplateRepository interface {
+	// Presets are configuration snapshots in separate storage, never sync inputs.
+	ListPresets(ctx context.Context) ([]*QualityRulePreset, error)
+	CreatePreset(ctx context.Context, preset *QualityRulePreset) (*QualityRulePreset, error)
 	List(ctx context.Context) ([]*QualityRuleTemplate, error)
 	Get(ctx context.Context, id int64) (*QualityRuleTemplate, error)
 	Create(ctx context.Context, template *QualityRuleTemplate) (*QualityRuleTemplate, error)
@@ -186,6 +189,12 @@ func prepareQualityTemplate(t *QualityRuleTemplate) error {
 	if t.PelicanConfig == nil || t.PelicanConfig.Quality == nil || t.PelicanConfig.Quality.Action == QualityActionOpenAITwoFAAdmission {
 		return fmt.Errorf("group rules must be quality rules")
 	}
+	config, err := reusableQualityConfig(t.PelicanConfig)
+	if err != nil {
+		return err
+	}
+	config.RuleName = t.PelicanConfig.RuleName
+	t.PelicanConfig = config
 	sample := t.planFor(0)
 	if _, err := nextPlanRun(sample, time.Now()); err != nil {
 		return fmt.Errorf("invalid test schedule: %w", err)

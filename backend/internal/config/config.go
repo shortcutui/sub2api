@@ -1303,6 +1303,8 @@ type GatewayConfig struct {
 	MaxAccountSwitches int `mapstructure:"max_account_switches"`
 	// Gemini 账户切换最大次数（Gemini 平台单独配置，因 API 限制更严格）
 	MaxAccountSwitchesGemini int `mapstructure:"max_account_switches_gemini"`
+	// Gemini 同账号重试次数（429/5xx 等可重试错误在换号前对同一账号的重发次数，不含首次请求）
+	MaxSameAccountRetriesGemini int `mapstructure:"max_same_account_retries_gemini"`
 
 	// Antigravity 429 fallback 限流时间（分钟），解析重置时间失败时使用
 	AntigravityFallbackCooldownMinutes int `mapstructure:"antigravity_fallback_cooldown_minutes"`
@@ -2270,6 +2272,14 @@ func configureConfigSource(setConfigFile, addConfigPath func(string)) {
 func setDefaults() {
 	viper.SetDefault("gateway.upstream_routing.enabled", false)
 	viper.SetDefault("runtime.role", RuntimeRoleFull)
+	viper.SetDefault("runtime.node_id", "")
+	viper.SetDefault("runtime.image_relay_owner_origin", "")
+	viper.SetDefault("runtime.ws_node_owner.enabled", false)
+	viper.SetDefault("runtime.ws_node_owner.node_id", "")
+	viper.SetDefault("runtime.scheduler_snapshot_mode", SchedulerSnapshotModeAuto)
+	viper.SetDefault("runtime.scheduler_readiness.enabled", false)
+	viper.SetDefault("runtime.scheduler_readiness.buckets", []string{})
+	viper.SetDefault("runtime.scheduler_readiness.max_age_seconds", 900)
 	viper.SetDefault("runtime.regional_scheduler_file", "")
 	viper.SetDefault("runtime.regional_auth_file", "")
 	viper.SetDefault("runtime.regional_concurrency_file", "")
@@ -2682,6 +2692,7 @@ func setDefaults() {
 	viper.SetDefault("gateway.max_account_switches_gemini", 3)
 	viper.SetDefault("gateway.api_key_queue.max_waiting", defaultAPIKeyQueueMaxWaiting)
 	viper.SetDefault("gateway.api_key_queue.timeout_seconds", defaultAPIKeyQueueTimeoutSeconds)
+	viper.SetDefault("gateway.max_same_account_retries_gemini", 4)
 	viper.SetDefault("gateway.force_codex_cli", false)
 	viper.SetDefault("gateway.codex_ws_anchor.ttl_seconds", 3600)
 	viper.SetDefault("gateway.codex_gateway_pin.ttl_seconds", 230)
@@ -3668,6 +3679,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Gateway.OpenAIPreOutputBudgetSeconds < 0 || c.Gateway.OpenAIPreOutputBudgetSeconds > 3600 {
 		return fmt.Errorf("gateway.openai_pre_output_budget_seconds must be between 0-3600 seconds")
+	}
+	if c.Gateway.MaxSameAccountRetriesGemini < 0 || c.Gateway.MaxSameAccountRetriesGemini > 10 {
+		return fmt.Errorf("gateway.max_same_account_retries_gemini must be between 0-10")
 	}
 	if c.Gateway.OpenAIFirstOutputTimeoutSeconds < 0 || c.Gateway.OpenAIFirstOutputTimeoutSeconds > 600 ||
 		(c.Gateway.OpenAIFirstOutputTimeoutSeconds > 0 && c.Gateway.OpenAIFirstOutputTimeoutSeconds < 30) {

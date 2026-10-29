@@ -46,6 +46,19 @@ func TestLoadMinOutputTokensFromEnv(t *testing.T) {
 	require.Equal(t, 16, cfg.Gateway.MinOutputTokens)
 }
 
+func TestLoadGeminiSameAccountRetries(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, 4, cfg.Gateway.MaxSameAccountRetriesGemini)
+
+	resetViperWithJWTSecret(t)
+	t.Setenv("GATEWAY_MAX_SAME_ACCOUNT_RETRIES_GEMINI", "0")
+	cfg, err = Load()
+	require.NoError(t, err)
+	require.Zero(t, cfg.Gateway.MaxSameAccountRetriesGemini)
+}
+
 func TestValidateMinOutputTokensMinimum(t *testing.T) {
 	resetViperWithJWTSecret(t)
 	cfg, err := Load()
@@ -328,6 +341,35 @@ func TestLoadTrustedProxiesPresenceFromYAML(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, test.want, cfg.Server.TrustedProxies)
 			require.Equal(t, test.configured, cfg.Server.TrustedProxiesConfigured)
+		})
+	}
+}
+
+func TestLoadTrustedProxiesEnvironmentOverridesPersistentYAML(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		setEnv bool
+		value  string
+		want   []string
+	}{
+		{"unset preserves YAML", false, "", []string{"172.18.0.1/32"}},
+		{"explicit empty disables YAML trust", true, "", []string{}},
+		{"list replaces YAML trust", true, "127.0.0.1/32, ::1/128", []string{"127.0.0.1/32", "::1/128"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			resetViperWithJWTSecret(t)
+			configFile := filepath.Join(t.TempDir(), "config.yaml")
+			require.NoError(t, os.WriteFile(configFile, []byte("server:\n  trusted_proxies:\n    - 172.18.0.1/32\n"), 0o600))
+			t.Setenv("CONFIG_FILE", configFile)
+			// Register cleanup before unsetting so an inherited value is restored.
+			t.Setenv("SERVER_TRUSTED_PROXIES", tt.value)
+			if !tt.setEnv {
+				require.NoError(t, os.Unsetenv("SERVER_TRUSTED_PROXIES"))
+			}
+			cfg, err := Load()
+			require.NoError(t, err)
+			require.True(t, cfg.Server.TrustedProxiesConfigured)
+			require.Equal(t, tt.want, cfg.Server.EffectiveTrustedProxies())
 		})
 	}
 }
@@ -1893,6 +1935,16 @@ func TestValidateConfigErrors(t *testing.T) {
 			name:    "gateway openai response header timeout",
 			mutate:  func(c *Config) { c.Gateway.OpenAIResponseHeaderTimeout = -1 },
 			wantErr: "gateway.openai_response_header_timeout",
+		},
+		{
+			name:    "gateway gemini same account retries negative",
+			mutate:  func(c *Config) { c.Gateway.MaxSameAccountRetriesGemini = -1 },
+			wantErr: "gateway.max_same_account_retries_gemini",
+		},
+		{
+			name:    "gateway gemini same account retries too large",
+			mutate:  func(c *Config) { c.Gateway.MaxSameAccountRetriesGemini = 11 },
+			wantErr: "gateway.max_same_account_retries_gemini",
 		},
 		{
 			name:    "gateway openai first output timeout below minimum",

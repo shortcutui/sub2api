@@ -189,6 +189,8 @@ export interface SendVerifyCodeResponse {
 export interface CustomMenuItem {
   id: string
   label: string
+  label_zh?: string
+  label_en?: string
   icon_svg: string
   url: string
   page_slug?: string
@@ -610,6 +612,7 @@ export interface Group {
   // 图片生成计费配置
   allow_image_generation: boolean
   allow_batch_image_generation: boolean
+  image_count_billing: boolean
   image_rate_independent: boolean
   image_rate_multiplier: number
   batch_image_discount_multiplier: number
@@ -860,6 +863,7 @@ export interface CreateGroupRequest {
   model_pricing?: import('@/api/admin/channels').ChannelModelPricing[]
   allow_image_generation?: boolean
   allow_batch_image_generation?: boolean
+  image_count_billing?: boolean
   image_rate_independent?: boolean
   image_rate_multiplier?: number
   batch_image_discount_multiplier?: number
@@ -930,6 +934,7 @@ export interface UpdateGroupRequest {
   model_pricing?: import('@/api/admin/channels').ChannelModelPricing[]
   allow_image_generation?: boolean
   allow_batch_image_generation?: boolean
+  image_count_billing?: boolean
   image_rate_independent?: boolean
   image_rate_multiplier?: number
   batch_image_discount_multiplier?: number
@@ -1368,6 +1373,37 @@ export interface ExcelBPSCredentialState {
  requires_manual_resume?: boolean
 }
 
+export interface GrokCatalogScope {
+  account_id: number
+  account_type: string
+  endpoint: string
+  fingerprint: string
+}
+
+export interface GrokCatalogAttempt {
+  started_at: string
+  finished_at: string
+  status: string
+  error_code?: string
+  scope?: GrokCatalogScope
+}
+
+export interface GrokModelDiagnosticItem {
+  requested: string
+  upstream?: string
+  status: string
+}
+
+export interface GrokModelDiagnostics {
+  state: string
+  endpoint?: string
+  fetched_at?: string
+  expires_at?: string
+  models: string[]
+  last_attempt?: GrokCatalogAttempt
+  mappings: GrokModelDiagnosticItem[]
+}
+
 export interface Account {
  excel_bps_credential_state?: ExcelBPSCredentialState
   id: number
@@ -1527,6 +1563,8 @@ export interface Account {
   parent_privacy_mode?: string
   parent_subscription_expires_at?: string
   parent_chatgpt_account_id?: string
+
+  grok_model_diagnostics?: GrokModelDiagnostics
 }
 
 // The admin account list may return this compact shape when lite=1. Detail
@@ -2286,6 +2324,8 @@ export interface ObserverSetupOptions {
 }
 
 export interface UpdateUserRequest {
+  /** Optional operation reason recorded by the admin audit middleware, not user notes. */
+  reason?: string
   email?: string
   password?: string
   username?: string
@@ -2654,11 +2694,15 @@ export interface TotpLogin2FARequest {
 // ==================== Scheduled Test Types ====================
 
 export interface QualityJudgeConfig {
+  kind?: 'llm' | 'jev'
   group_id: number
   model_id: string
   prompt: string
 }
 export interface QualityJudgment {
+  kind?: 'llm' | 'jev'
+  rules_version?: string
+  latency_ms?: number
   verdict: 'correct' | 'incorrect' | 'unknown'
   reason: string
   account_id?: number
@@ -2687,6 +2731,7 @@ export interface QualityBPSPolicy {
   hold_on_usage: boolean
 }
 export interface QualityPolicy {
+  trigger_on_upstream_5xx?: boolean
   admission?: import('@/utils/openaiTwoFAAdmission').OpenAITwoFAAdmissionConfig
   judge?: QualityJudgeConfig
   expected_answer: string
@@ -2698,7 +2743,26 @@ export interface QualityPolicy {
   bps?: QualityBPSPolicy
 }
 
+export interface QualityRestoreDiagnostic {
+  reason: string
+  disposition: 'manual_required' | 'external_membership_present'
+  scope: string
+  ownership_retained: boolean
+  groups?: { group_id: number; group_exists: boolean; membership_present: boolean }[]
+  models?: string[]
+  changed_fields?: string[]
+  account_status?: string
+  schedulable?: boolean
+  account_version?: string
+  owned_account_version?: string
+  expected_concurrency?: number
+  current_concurrency?: number
+}
+
 export interface PelicanTestConfig {
+  // Optional display name, persisted with the rule's editable configuration.
+  rule_name?: string
+  quality_restore_diagnostic?: QualityRestoreDiagnostic
   quality_model_outcomes?: Record<string, 'passed' | 'failed' | 'inconclusive' | 'skipped'>
   quality_model_actions?: Record<string, string>
   trigger_source?: string
@@ -2758,6 +2822,8 @@ export interface CreateScheduledTestPlanRequest {
 }
 
 export interface UpdateScheduledTestPlanRequest {
+  // Configuration reuse must not implicitly restore or discard target ownership.
+  preserve_quality_state?: boolean
   pelican_config?: PelicanTestConfig
   model_id?: string
   cron_expression?: string
